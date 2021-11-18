@@ -220,6 +220,7 @@ struct thread_options {
 	unsigned long long zone_capacity;
 	unsigned long long zone_skip;
 	uint32_t zone_skip_nz;
+	unsigned int zone_append;
 	enum fio_zone_mode zone_mode;
 	unsigned long long lockmem;
 	enum fio_memtype mem_type;
@@ -697,6 +698,7 @@ struct thread_options_pack {
 	uint32_t zone_mode;
 	int32_t max_open_zones;
 	uint32_t ignore_zone_limits;
+	uint32_t zone_append;
 
 	uint32_t log_entries;
 	uint32_t log_prio;

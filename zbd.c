@@ -1993,6 +1993,10 @@ void setup_zbd_stripe_zone_mode(struct thread_data *td, struct io_u *io_u)
 		f->last_pos[io_u->ddir] = zone_end;
 	}
 
+	if (td->o.zone_append) {
+		io_u->zone_slba = f->file_stripe_offset[ddir];
+	}
+
 	if (ddir == DDIR_WRITE) {
 		z->wp += td->o.bs[ddir];
 		if (z->wp == (z->start + f->zbd_info->zone_cap))
@@ -2233,6 +2237,8 @@ enum io_u_action zbd_adjust_block(struct thread_data *td, struct io_u *io_u)
 		/* Make writes occur at the write pointer */
 		assert(!zbd_zone_full(f, zb, min_bs));
 		io_u->offset = zb->wp;
+		if (td->o.zone_append)
+			io_u->zone_slba = zb->start;
 		if (!is_valid_offset(f, io_u->offset)) {
 			td_verror(td, EINVAL, "invalid WP value");
 			dprint(FD_ZBD, "%s: dropped request with offset %llu\n",

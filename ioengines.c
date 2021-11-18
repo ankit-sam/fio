@@ -476,6 +476,12 @@ int td_io_init(struct thread_data *td)
 			td->error = ret;
 	}
 
+	if (td->o.zone_append && !(td->io_ops->flags & FIO_ZONE_APPEND)) {
+		log_err("fio: io engine %s doesn't support zone append\n",
+			td->io_ops->name);
+		return 1;
+	}
+
 	return ret;
 }
 

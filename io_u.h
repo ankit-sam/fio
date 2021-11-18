@@ -96,6 +96,7 @@ struct io_u {
 		struct workqueue_work work;
 	};
 
+	unsigned long long zone_slba;
 	/*
 	 * ZBD mode zbd_queue_io callback: called after engine->queue operation
 	 * to advance a zone write pointer and eventually unlock the I/O zone.

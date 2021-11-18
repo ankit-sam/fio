@@ -809,6 +809,13 @@ sequential workloads and ignored for random workloads. For read workloads,
 see also \fBread_beyond_wp\fR.
 
 .TP
+.BI zone_append
+For :option:`rw` =write or :option: `rw` =randwrite and for
+:option:`zonemode` =zbd, if zone_append is enabled the offset to write will be
+the starting offset of a zone. On successful completion the device returns the
+offset where the data has been placed.
+
+.TP
 .BI read_beyond_wp \fR=\fPbool
 This parameter applies to \fBzonemode=zbd\fR only.
 

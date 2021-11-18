@@ -1040,6 +1040,13 @@ Target file/device
         :option:`zonerange` parameter is specified then :option:`zoneskip`
         divided by :option:`zonerange` is the number of zones to skip.
 
+.. option:: zone_append=bool
+
+	For :option:`rw` =write or :option: `rw` =randwrite and
+	:option:`zonemode` =zbd, if zone_append is enabled the offset to write
+	will be the starting offset of a zone. On successful completion the device
+	returns the offset where the data has been placed.
+
 .. option:: read_beyond_wp=bool
 
 	This parameter applies to :option:`zonemode` =zbd only.
