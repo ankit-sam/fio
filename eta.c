@@ -181,6 +181,7 @@ static unsigned long thread_eta(struct thread_data *td)
 	 * If io_size is set, bytes_total is an exact value that does not need
 	 * adjustment.
 	 */
+#if 0
 	if (td->o.zone_size && td->o.zone_skip && bytes_total &&
 	    !fio_option_is_set(&td->o, io_size)) {
 		unsigned int nr_zones;
@@ -200,6 +201,7 @@ static unsigned long thread_eta(struct thread_data *td)
 			nr_zones = bytes_total / zone_bytes;
 		bytes_total -= nr_zones * td->o.zone_skip;
 	}
+#endif
 
 	/*
 	 * if writing and verifying afterwards, bytes_total will be twice the

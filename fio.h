@@ -366,6 +366,9 @@ struct thread_data {
 	uint64_t this_io_bytes[DDIR_RWDIR_CNT];
 	uint64_t io_skip_bytes;
 	uint64_t zone_bytes;
+	uint64_t czone_bytes[2];
+	uint64_t zone_bytes_parallel[2];
+	uint64_t total_bytes[2];
 	struct fio_sem *sem;
 	uint64_t bytes_done[DDIR_RWDIR_CNT];
 
@@ -461,6 +464,14 @@ struct thread_data {
 	unsigned int total_err_count;
 	int first_error;
 
+	/*
+	 * For storing zone location and skipping zones
+	 */
+	int zone_skip_left[2];
+	int zone_skip_pending[2];
+	int zone_stripe_count[2];
+	int nr_stripe_left[2];
+
 	struct fio_flow *flow;
 	unsigned long long flow_counter;
 
@@ -475,6 +486,7 @@ struct thread_data {
 	struct steadystate_data ss;
 
 	char verror[FIO_VERROR_SIZE];
+	uint64_t stripe_offset[2][FIO_ZONE_STRIPE_SIZE];
 
 #ifdef CONFIG_CUDA
 	/*

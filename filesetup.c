@@ -1272,6 +1272,13 @@ int setup_files(struct thread_data *td)
 				    td_ioengine_flagged(td, FIO_FAKEIO)))
 				f->real_file_size = f->io_size + f->file_offset;
 		}
+		if (f->zbd_info && !td->o.size_percent && f->zbd_info->zone_cap < f->zbd_info->zone_size)
+			f->io_size = (((double)f->zbd_info->zone_size / f->zbd_info->zone_cap)) * f->io_size;
+		if (f->zbd_info && td->o.size_percent && f->zbd_info->zone_cap < f->zbd_info->zone_size) {
+			td->o.size = (((double)f->zbd_info->zone_cap / f->zbd_info->zone_size)) * td->o.size;
+			if (!td->o.io_size)
+				td->total_io_size = td->o.size * td->o.loops;
+		}
 	}
 
 	if (td->o.block_error_hist) {

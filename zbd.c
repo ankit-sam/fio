@@ -257,7 +257,7 @@ static int zbd_reset_zone(struct thread_data *td, struct fio_file *f,
 	if (!data_in_zone)
 		return 0;
 
-	assert(is_valid_offset(f, offset + length - 1));
+//	assert(is_valid_offset(f, offset + length - 1));
 
 	dprint(FD_ZBD, "%s: resetting wp of zone %u.\n",
 	       f->file_name, zbd_zone_idx(f, z));
@@ -279,6 +279,7 @@ static int zbd_reset_zone(struct thread_data *td, struct fio_file *f,
 	pthread_mutex_unlock(&f->zbd_info->mutex);
 
 	z->wp = z->start;
+	z->write_offset = z->wp;
 	z->verify_block = 0;
 
 	td->ts.nr_zone_resets++;
@@ -531,14 +532,22 @@ static bool zbd_zone_align_file_sizes(struct thread_data *td,
 				f->file_name);
 			return false;
 		}
-	} else if (td->o.zone_size != f->zbd_info->zone_size) {
-		log_err("%s: zonesize %llu does not match the device zone size %"PRIu64".\n",
-			f->file_name, td->o.zone_size,
-			f->zbd_info->zone_size);
+	}
+
+	if (td->o.zone_range && td->o.zone_range != f->zbd_info->zone_size) {
+		log_info("%s: Rounding zonerange from %llu to %llu\n",
+			 f->file_name, (unsigned long long) td->o.zone_range,
+			 (unsigned long long) f->zbd_info->zone_size);
+		td->o.zone_range = f->zbd_info->zone_size;
+	}
+
+	if (td->o.zone_skip && td->o.time_based) {
+		log_err("%s: Cannot run time based job with zoneskip\n",
+			f->file_name);
 		return false;
 	}
 
-	if (td->o.zone_skip % td->o.zone_size) {
+	if (td->o.zone_skip % td->o.zone_range) {
 		log_err("%s: zoneskip %llu is not a multiple of the device zone size %llu.\n",
 			f->file_name, td->o.zone_skip,
 			td->o.zone_size);
@@ -546,8 +555,7 @@ static bool zbd_zone_align_file_sizes(struct thread_data *td,
 	}
 
 	z = zbd_offset_to_zone(f, f->file_offset);
-	if ((f->file_offset != z->start) &&
-	    (td->o.td_ddir != TD_DDIR_READ)) {
+	if (f->file_offset != z->start) {
 		new_offset = zbd_zone_end(z);
 		if (new_offset >= f->file_offset + f->io_size) {
 			log_info("%s: io_size must be at least one zone\n",
@@ -563,8 +571,7 @@ static bool zbd_zone_align_file_sizes(struct thread_data *td,
 
 	z = zbd_offset_to_zone(f, f->file_offset + f->io_size);
 	new_end = z->start;
-	if ((td->o.td_ddir != TD_DDIR_READ) &&
-	    (f->file_offset + f->io_size != new_end)) {
+	if (f->file_offset + f->io_size != new_end) {
 		if (new_end <= f->file_offset) {
 			log_info("%s: io_size must be at least one zone\n",
 				 f->file_name);
@@ -575,6 +582,17 @@ static bool zbd_zone_align_file_sizes(struct thread_data *td,
 			 new_end - f->file_offset);
 		f->io_size = new_end - f->file_offset;
 	}
+
+	if (td->o.zone_range) {
+		td->zone_skip_left[0] = td->zone_skip_left[1] = td->o.zone_size / td->o.zone_range;
+		td->zone_skip_pending[0] = td->zone_skip_pending[1] = td->zone_skip_left[0];
+		td->nr_stripe_left[0] = td->nr_stripe_left[1] = f->io_size / td->o.zone_range;
+		f->file_stripe_offset[0] = f->file_stripe_offset[1] = f->file_offset;
+	}
+	if (td->o.zone_range && !td->o.max_parallel_zones)
+		td->o.max_parallel_zones = td->o.max_open_zones / thread_number;
+	if (td->o.zone_range)
+		td->o.size = (((double)f->zbd_info->zone_cap / f->zbd_info->zone_size)) * f->io_size;
 
 	return true;
 }
@@ -733,7 +751,7 @@ static int parse_zone_info(struct thread_data *td, struct fio_file *f)
 	int nr_zones, nrz;
 	struct zbd_zone *zones, *z;
 	struct fio_zone_info *p;
-	uint64_t zone_size, offset;
+	uint64_t zone_size, zone_cap, offset;
 	struct zoned_block_device_info *zbd_info = NULL;
 	int i, j, ret = -ENOMEM;
 
@@ -750,13 +768,21 @@ static int parse_zone_info(struct thread_data *td, struct fio_file *f)
 	}
 
 	zone_size = zones[0].len;
+	zone_cap = zones[0].capacity;
 	nr_zones = (f->real_file_size + zone_size - 1) / zone_size;
 
 	if (td->o.zone_size == 0) {
 		td->o.zone_size = zone_size;
-	} else if (td->o.zone_size != zone_size) {
-		log_err("fio: %s job parameter zonesize %llu does not match disk zone size %"PRIu64".\n",
-			f->file_name, td->o.zone_size, zone_size);
+	} else if (td->o.zone_size != zone_size && !td->o.zone_range) {
+		log_err("fio: %s job parameter zonesize %llu does not match disk zone size %llu.\n",
+			 f->file_name, (unsigned long long) td->o.zone_size,
+			(unsigned long long) zone_size);
+		ret = -EINVAL;
+		goto out;
+	} else if ((td->o.zone_size % zone_size) && td->o.zone_range) {
+		log_err("fio: %s job parameter zonesize %llu is not a multiple of disk zone size %llu.\n",
+			 f->file_name, (unsigned long long) td->o.zone_size,
+			(unsigned long long) zone_size);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -777,17 +803,20 @@ static int parse_zone_info(struct thread_data *td, struct fio_file *f)
 			mutex_init_pshared_with_type(&p->mutex,
 						     PTHREAD_MUTEX_RECURSIVE);
 			p->start = z->start;
+			p->read_offset = p->start;
 			p->capacity = z->capacity;
 
 			switch (z->cond) {
 			case ZBD_ZONE_COND_NOT_WP:
 			case ZBD_ZONE_COND_FULL:
 				p->wp = p->start + p->capacity;
+				p->write_offset = p->wp;
 				break;
 			default:
 				assert(z->start <= z->wp);
-				assert(z->wp <= z->start + zone_size);
+//				assert(z->wp <= z->start + zone_size);
 				p->wp = z->wp;
+				p->write_offset = p->wp;
 				break;
 			}
 
@@ -829,6 +858,7 @@ static int parse_zone_info(struct thread_data *td, struct fio_file *f)
 
 	f->zbd_info = zbd_info;
 	f->zbd_info->zone_size = zone_size;
+	f->zbd_info->zone_cap = zone_cap;
 	f->zbd_info->zone_size_log2 = is_power_of_2(zone_size) ?
 		ilog2(zone_size) : 0;
 	f->zbd_info->nr_zones = nr_zones;
@@ -1759,6 +1789,225 @@ void setup_zbd_zone_mode(struct thread_data *td, struct io_u *io_u)
 		f->last_pos[ddir] = f->file_offset;
 		td->io_skip_bytes += td->o.zone_skip;
 	}
+}
+
+void setup_zbd_stripe_zone_mode(struct thread_data *td, struct io_u *io_u)
+{
+	struct fio_file *f = io_u->file;
+	enum fio_ddir ddir = io_u->ddir;
+	struct fio_zone_info *z;
+	int zone_stripe = 0;
+	uint64_t file_offset;
+	int i, bytes;
+	int reset_zone = 0;
+	int reset_cond_check = 0;
+	uint64_t zone_end;
+	int next_zone = 0;
+
+	assert(td->o.zone_mode == ZONE_MODE_ZBD);
+
+	if (!td->o.zone_range)
+		return;
+
+	assert(td->o.zone_size);
+
+	if (f->last_pos[ddir] - f->file_stripe_offset[ddir] == td->o.zone_range)
+		z = zbd_offset_to_zone(f, f->last_pos[ddir] - td->o.bs[ddir]);
+	else
+		z = zbd_offset_to_zone(f, f->last_pos[ddir]);
+
+	if (ddir == DDIR_WRITE)
+		zone_end = z->wp;
+	else
+		zone_end = z->read_offset;
+
+	if (zone_end == z->start + f->zbd_info->zone_size)
+		zone_end = z->start + f->zbd_info->zone_cap;
+
+	if (((io_u->ddir == DDIR_WRITE) && (zone_end >= z->write_offset + td->o.bs[ddir])) ||
+	    ((io_u->ddir == DDIR_READ) && (zone_end > z->start))) {
+		next_zone = 1;
+		td->stripe_offset[ddir][td->zone_stripe_count[ddir]] = zone_end;
+		td->zone_stripe_count[ddir]++;
+
+		if ((td->zone_stripe_count[ddir] == td->nr_stripe_left[ddir]) ||
+		    (td->zone_stripe_count[ddir] == td->o.max_parallel_zones)) {
+			zone_stripe = 1;
+		}
+	}
+
+	if (zone_stripe) {
+		for (i = 0; i < td->zone_stripe_count[ddir]; i++) {
+			file_offset = td->stripe_offset[ddir][i];
+			if ((file_offset % td->o.zone_range) ||
+			     (f->zbd_info->zone_cap != f->zbd_info->zone_size))
+				z = zbd_offset_to_zone(f, file_offset);
+			else
+				z = zbd_offset_to_zone(f, file_offset - td->o.zone_range);
+
+			if (ddir == DDIR_WRITE)
+				zone_end = z->wp;
+			else if (ddir == DDIR_READ)
+				zone_end = z->read_offset;
+			if (i == 0 && (zone_end < z->start + td->o.zone_range)) {
+				f->file_stripe_offset[ddir] = z->start;
+				f->last_pos[ddir] = zone_end;
+			}
+			if ((i == td->zone_stripe_count[ddir] - 1) && (zone_end == z->start + td->o.zone_range)) {
+				td->zone_skip_left[ddir] = td->zone_skip_left[ddir] - td->o.max_parallel_zones;
+				td->nr_stripe_left[ddir] -= td->o.max_parallel_zones;
+				if (td->zone_skip_left[ddir] > 0) {
+					f->file_stripe_offset[ddir] = z->start + td->o.zone_range;
+					f->last_pos[io_u->ddir] = f->file_stripe_offset[ddir];
+				} else {
+					if (td->zone_skip_left[ddir] < 0) {
+						while (td->zone_skip_left[ddir] < 0)
+							td->zone_skip_left[ddir] += td->o.zone_size / td->o.zone_range;
+					}
+					if (!td->zone_skip_left[ddir]) {
+						td->zone_skip_left[ddir] += td->o.zone_size / td->o.zone_range;
+						f->file_stripe_offset[ddir] = z->start + td->o.zone_skip + td->o.zone_range;
+						f->last_pos[io_u->ddir] = f->file_stripe_offset[ddir];
+					} else {
+						f->file_stripe_offset[ddir] = z->start + td->o.zone_range;
+						f->last_pos[io_u->ddir] = f->file_stripe_offset[ddir];
+					}
+				}
+			}
+			if (ddir == DDIR_WRITE)
+				z->write_offset = z->wp;
+		}
+
+		td->zone_skip_pending[ddir] = td->zone_skip_left[ddir];
+		td->zone_stripe_count[ddir] = 0;
+		td->czone_bytes[ddir] = 0;
+		next_zone = 0;
+
+		z = zbd_offset_to_zone(f, f->file_stripe_offset[ddir]);
+		dprint(FD_ZBD, "%d %s: New zone %u, file offset: %lu, offset: %lu\n",
+		       __LINE__, f->file_name, zbd_zone_idx(f, z), f->file_stripe_offset[ddir],
+		       (io_u->ddir == DDIR_WRITE) ? z->wp : z->read_offset);
+	}
+
+	if ((td->total_bytes[ddir] >= ((double)f->zbd_info->zone_cap / f->zbd_info->zone_size) * f->io_size)) {
+		f->file_stripe_offset[ddir] = get_start_offset(td, f);
+		f->last_pos[ddir] = f->file_stripe_offset[ddir];
+
+		td->nr_stripe_left[ddir] = f->io_size / td->o.zone_range;
+		td->zone_bytes_parallel[ddir] = 0;
+		td->zone_skip_left[ddir] = td->o.zone_size / td->o.zone_range;
+		td->zone_skip_pending[ddir] = td->zone_skip_left[ddir];
+
+		td->zone_stripe_count[ddir] = 0;
+		td->total_bytes[ddir] = 0;
+		td->czone_bytes[ddir] = 0;
+		next_zone = 0;
+
+		z = zbd_offset_to_zone(f, f->last_pos[ddir]);
+	}
+
+	/*
+	 * See if it's time to switch to a new zone
+	 */
+	bytes = td->o.bs[ddir];
+
+	if (ddir == DDIR_WRITE) {
+		if ((f->last_pos[ddir] - f->file_stripe_offset[ddir] == 0) && (z->wp != z->start)) {
+			zbd_reset_zone(td, f, z);
+		}
+
+		reset_cond_check = td->nr_stripe_left[ddir] >= td->o.max_parallel_zones ?
+				   td->o.max_parallel_zones : td->nr_stripe_left[ddir];
+
+		if (td->zone_bytes_parallel[ddir] <= bytes * reset_cond_check)
+			reset_zone = 1;
+	} else if (ddir == DDIR_READ) {
+		if ((f->last_pos[ddir] - f->file_stripe_offset[ddir] == 0) && (z->read_offset != z->start))
+			z->read_offset = z->start;
+
+		reset_cond_check = td->nr_stripe_left[ddir] >= td->o.max_parallel_zones ?
+				   td->o.max_parallel_zones : td->nr_stripe_left[ddir];
+
+		if (td->zone_bytes_parallel[ddir] <= bytes * reset_cond_check)
+			reset_zone = 1;
+	}
+
+	if (ddir == DDIR_WRITE)
+		zone_end = z->wp;
+	else if (ddir == DDIR_READ)
+		zone_end = z->read_offset;
+	if (td->czone_bytes[ddir] >= (td->zone_skip_pending[ddir] * bytes)) {
+		f->file_stripe_offset[ddir] += td->o.zone_range + td->o.zone_skip;
+		/*
+		 * Wrap from the beginning, if we exceed the file size
+		 */
+		if (f->file_stripe_offset[ddir] >= f->real_file_size)
+			f->file_stripe_offset[ddir] = get_start_offset(td, f);
+
+		z = zbd_offset_to_zone(f, f->file_stripe_offset[ddir]);
+		dprint(FD_ZBD, "%d %s: New zone %u, file offset: %lu, offset: %lu\n",
+		       __LINE__, f->file_name, zbd_zone_idx(f, z), f->file_stripe_offset[ddir],
+		       (ddir == DDIR_WRITE) ? z->wp : z->read_offset);
+
+		if (reset_zone) {
+			if ((io_u->ddir == DDIR_WRITE) && (z->wp != z->start)) {
+				zbd_reset_zone(td, f, z);
+			} else if ((io_u->ddir == DDIR_READ) && (z->read_offset != z->start))
+				z->read_offset = z->start;
+		}
+
+		if (ddir == DDIR_WRITE)
+			zone_end = z->wp;
+		else if (ddir == DDIR_READ)
+			zone_end = z->read_offset;
+		f->last_pos[io_u->ddir] = zone_end;
+		td->zone_skip_pending[ddir] = td->o.zone_size / td->o.zone_range;
+		td->czone_bytes[ddir] = 0;
+	} else if (((ddir == DDIR_WRITE) && (z->wp >= z->write_offset + bytes)) ||
+		   ((ddir == DDIR_READ) && next_zone)) {
+		f->file_stripe_offset[ddir] += td->o.zone_range;
+		/*
+		 * Wrap from the beginning, if we exceed the file size
+		 */
+		if (f->file_stripe_offset[ddir] >= f->real_file_size) {
+			td->czone_bytes[ddir] = 0;
+			f->file_stripe_offset[ddir] = get_start_offset(td, f);
+		}
+
+		z = zbd_offset_to_zone(f, f->file_stripe_offset[ddir]);
+		dprint(FD_ZBD, "%d %s: New zone %u, file offset: %lu, offset: %lu\n",
+		       __LINE__, f->file_name, zbd_zone_idx(f, z), f->file_stripe_offset[ddir],
+		       (ddir == DDIR_WRITE) ? z->wp : z->read_offset);
+
+		if (reset_zone) {
+			if ((ddir == DDIR_WRITE) && (z->wp != z->start)) {
+				zbd_reset_zone(td, f, z);
+			} else if ((ddir == DDIR_READ) && (z->read_offset != z->start))
+				z->read_offset = z->start;
+		}
+
+		if (ddir == DDIR_WRITE)
+			zone_end = z->wp;
+		else if (ddir == DDIR_READ)
+			zone_end = z->read_offset;
+		f->last_pos[io_u->ddir] = zone_end;
+	}
+
+	if (ddir == DDIR_WRITE) {
+		z->wp += td->o.bs[ddir];
+		if (z->wp == (z->start + f->zbd_info->zone_cap))
+			z->wp = z->start + f->zbd_info->zone_size;
+	} else {
+		z->read_offset += td->o.bs[ddir];
+		if (z->read_offset == (z->start + f->zbd_info->zone_cap))
+			z->read_offset = z->start + f->zbd_info->zone_size;
+	}
+
+	if (td->zone_bytes_parallel[ddir] >= td->o.max_parallel_zones * f->zbd_info->zone_cap)
+		td->zone_bytes_parallel[ddir] = 0;
+
+	td->zone_bytes_parallel[ddir] += td->o.bs[ddir];
+	td->total_bytes[ddir] += td->o.bs[ddir];
 }
 
 /**
