@@ -146,6 +146,7 @@ enum block_info_state {
 #define FIO_JOBNAME_SIZE	128
 #define FIO_JOBDESC_SIZE	256
 #define FIO_VERROR_SIZE		128
+#define FIO_ZONE_STRIPE_SIZE	4096
 #define UNIFIED_SPLIT		0
 #define UNIFIED_MIXED		1
 #define UNIFIED_BOTH		2

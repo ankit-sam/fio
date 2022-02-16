@@ -492,7 +492,7 @@ static int get_next_offset(struct thread_data *td, struct io_u *io_u,
 	if (get_next_block(td, io_u, ddir, rw_seq_hit, is_random))
 		return 1;
 
-	if (io_u->offset >= f->io_size) {
+	if (!td->o.zone_range && io_u->offset >= f->io_size) {
 		dprint(FD_IO, "get_next_offset: offset %llu >= io_size %llu\n",
 					(unsigned long long) io_u->offset,
 					(unsigned long long) f->io_size);
@@ -925,8 +925,12 @@ static int fill_io_u(struct thread_data *td, struct io_u *io_u)
 
 	if (td->o.zone_mode == ZONE_MODE_STRIDED)
 		setup_strided_zone_mode(td, io_u);
-	else if (td->o.zone_mode == ZONE_MODE_ZBD)
-		setup_zbd_zone_mode(td, io_u);
+	else if (td->o.zone_mode == ZONE_MODE_ZBD) {
+		if (td->o.zone_range)
+			setup_zbd_stripe_zone_mode(td, io_u);
+		else
+			setup_zbd_zone_mode(td, io_u);
+	}
 
 	/*
 	 * No log, let the seq/rand engine retrieve the next buflen and
@@ -944,7 +948,7 @@ static int fill_io_u(struct thread_data *td, struct io_u *io_u)
 	}
 
 	offset = io_u->offset;
-	if (td->o.zone_mode == ZONE_MODE_ZBD) {
+	if ((td->o.zone_mode == ZONE_MODE_ZBD) && !td->o.zone_range) {
 		ret = zbd_adjust_block(td, io_u);
 		if (ret == io_u_eof)
 			return 1;
@@ -968,6 +972,7 @@ out:
 	dprint_io_u(io_u, "fill");
 	io_u->verify_offset = io_u->offset;
 	td->zone_bytes += io_u->buflen;
+	td->czone_bytes[io_u->ddir] += io_u->buflen;
 	return 0;
 }
 

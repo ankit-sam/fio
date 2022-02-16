@@ -99,6 +99,7 @@ struct fio_file {
 	 */
 	uint64_t real_file_size;
 	uint64_t file_offset;
+	uint64_t file_stripe_offset[2];
 	uint64_t io_size;
 
 	/*

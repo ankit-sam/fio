@@ -998,8 +998,10 @@ Target file/device
 
 .. option:: zonerange=int
 
-	Size of a single zone. See also :option:`zonesize` and
-	:option:`zoneskip`.
+	Size of a single zone. For :option:`zonemode` =zbd and sequential
+        workload this specifies that I/O's will be striped across zones. The
+        zone stripe size will depend on :option:`max_open_zones`. See also
+        :option:`zonesize` and :option:`zoneskip`.
 
 .. option:: zonesize=int
 
@@ -1010,8 +1012,12 @@ Target file/device
 	larger than :option:`zonerange` then each zone will be accessed
 	multiple times before skipping to the next zone.
 
-	For :option:`zonemode` =zbd, this is the size of a single zone. The
-	:option:`zonerange` parameter is ignored in this mode.
+	For :option:`zonemode` =zbd, this is the size of a single zone. If
+	:option:`zonerange` parameter is also specified for this mode, then
+        this should in multiple of the size of a single zone.
+        The :option:`zonesize` divided by :option:`zonerange` is the number
+        of zones to write then skip :option:`zoneskip` divided by
+        :option:`zonerange` zones.
 
 
 .. option:: zonecapacity=int
@@ -1027,8 +1033,12 @@ Target file/device
 .. option:: zoneskip=int
 
 	For :option:`zonemode` =strided, the number of bytes to skip after
-	:option:`zonesize` bytes of data have been transferred. This parameter
-	must be zero for :option:`zonemode` =zbd.
+	:option:`zonesize` bytes of data have been transferred.
+
+        This parameter must be zero for :option:`zonemode` =zbd, when
+        :option:`zonerange` parameter is not specified. If
+        :option:`zonerange` parameter is specified then :option:`zoneskip`
+        divided by :option:`zonerange` is the number of zones to skip.
 
 .. option:: read_beyond_wp=bool
 
@@ -1058,9 +1068,18 @@ Target file/device
 	number of open zones is defined as the number of zones to which write
 	commands are issued.
 
+        For sequential workload if :option:`zonerange` parameter is specified
+        this is the number of zones to stripe.
+
+
 .. option:: job_max_open_zones=int
 
 	Limit on the number of simultaneously opened zones per single
+	thread/process.
+
+.. option:: max_parallel_zones=int
+
+	Limit on the number of simultaneously striped zones per single
 	thread/process.
 
 .. option:: ignore_zone_limits=bool

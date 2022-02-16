@@ -38,6 +38,8 @@ struct fio_zone_info {
 	pthread_mutex_t		mutex;
 	uint64_t		start;
 	uint64_t		wp;
+	uint64_t		write_offset;
+	uint64_t		read_offset;
 	uint64_t		capacity;
 	uint32_t		verify_block;
 	enum zbd_zone_type	type:2;
@@ -78,6 +80,7 @@ struct zoned_block_device_info {
 	uint32_t		max_open_zones;
 	pthread_mutex_t		mutex;
 	uint64_t		zone_size;
+	uint64_t		zone_cap;
 	uint64_t		sectors_with_data;
 	uint64_t		wp_sectors_with_data;
 	uint32_t		zone_size_log2;
@@ -96,6 +99,7 @@ void zbd_free_zone_info(struct fio_file *f);
 void zbd_file_reset(struct thread_data *td, struct fio_file *f);
 bool zbd_unaligned_write(int error_code);
 void setup_zbd_zone_mode(struct thread_data *td, struct io_u *io_u);
+void setup_zbd_stripe_zone_mode(struct thread_data *td, struct io_u *io_u);
 enum fio_ddir zbd_adjust_ddir(struct thread_data *td, struct io_u *io_u,
 			      enum fio_ddir ddir);
 enum io_u_action zbd_adjust_block(struct thread_data *td, struct io_u *io_u);
