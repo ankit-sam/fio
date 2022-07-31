@@ -435,7 +435,7 @@ static int fio_ioring_cmd_prep(struct thread_data *td, struct io_u *io_u)
 	}
 
 	cmd = (struct nvme_uring_cmd *)sqe->cmd;
-	return fio_nvme_uring_cmd_prep(cmd, io_u,
+	return fio_nvme_uring_cmd_prep(cmd, td, io_u,
 			o->nonvectored ? NULL : &ld->iovecs[io_u->index]);
 }
 
@@ -1220,7 +1220,8 @@ static struct ioengine_ops ioengine_uring_cmd = {
 	.version		= FIO_IOOPS_VERSION,
 	.flags			= FIO_ASYNCIO_SYNC_TRIM | FIO_NO_OFFLOAD |
 					FIO_MEMALIGN | FIO_RAWIO |
-					FIO_ASYNCIO_SETS_ISSUE_TIME,
+					FIO_ASYNCIO_SETS_ISSUE_TIME |
+					FIO_ZONE_APPEND,
 	.init			= fio_ioring_init,
 	.post_init		= fio_ioring_cmd_post_init,
 	.io_u_init		= fio_ioring_io_u_init,

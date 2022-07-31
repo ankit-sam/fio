@@ -5,8 +5,8 @@
 
 #include "nvme.h"
 
-int fio_nvme_uring_cmd_prep(struct nvme_uring_cmd *cmd, struct io_u *io_u,
-			    struct iovec *iov)
+int fio_nvme_uring_cmd_prep(struct nvme_uring_cmd *cmd, struct thread_data *td,
+			    struct io_u *io_u, struct iovec *iov)
 {
 	struct nvme_data *data = FILE_ENG_DATA(io_u->file);
 	__u64 slba;
@@ -21,7 +21,12 @@ int fio_nvme_uring_cmd_prep(struct nvme_uring_cmd *cmd, struct io_u *io_u,
 	else
 		return -ENOTSUP;
 
-	slba = io_u->offset >> data->lba_shift;
+	if ((td->o.zone_mode == ZONE_MODE_ZBD) && td->o.zone_append) {
+		slba = io_u->zone_slba >> data->lba_shift;
+		cmd->opcode = nvme_zns_cmd_append;
+	} else {
+		slba = io_u->offset >> data->lba_shift;
+	}
 	nlb = (io_u->xfer_buflen >> data->lba_shift) - 1;
 
 	/* cdw10 and cdw11 represent starting lba */

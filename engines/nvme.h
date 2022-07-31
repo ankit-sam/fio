@@ -69,6 +69,7 @@ enum nvme_io_opcode {
 	nvme_cmd_read			= 0x02,
 	nvme_zns_cmd_mgmt_send		= 0x79,
 	nvme_zns_cmd_mgmt_recv		= 0x7a,
+	nvme_zns_cmd_append		= 0x7d,
 };
 
 enum nvme_zns_zs {
@@ -195,8 +196,8 @@ struct nvme_zone_report {
 int fio_nvme_get_info(struct fio_file *f, __u32 *nsid, __u32 *lba_sz,
 		      __u64 *nlba);
 
-int fio_nvme_uring_cmd_prep(struct nvme_uring_cmd *cmd, struct io_u *io_u,
-			    struct iovec *iov);
+int fio_nvme_uring_cmd_prep(struct nvme_uring_cmd *cmd, struct thread_data *td,
+			    struct io_u *io_u, struct iovec *iov);
 
 int fio_nvme_get_zoned_model(struct thread_data *td, struct fio_file *f,
 			     enum zbd_zoned_model *model);
