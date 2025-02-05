@@ -188,7 +188,7 @@ class VerifyFailureTest(FioJobCmdTest):
 #
 TEST_LIST_DDIR_FIXED = [
     {
-        # basic verify job
+        # basic seq write verify job
         "test_id": 1000,
         "fio_opts": {
             "ioengine": "psync",
@@ -201,7 +201,7 @@ TEST_LIST_DDIR_FIXED = [
         "success": SUCCESS_NONZERO,
     },
     {
-        # basic test that just random writes data and then verifies it
+        # basic rand write verify job
         "test_id": 1001,
         "fio_opts": {
             "ioengine": "psync",
@@ -470,8 +470,7 @@ def verify_test(test_env, args, ddir, csum):
             test['fio_opts']['directory'] = str(Path(directory).absolute()) if \
                 platform.system() != "Windows" else str(Path(directory).absolute()).replace(':', '\\:')
         else:
-            if 'directory' in test['fio_opts']:
-                del test['fio_opts']['directory']
+            test['fio_opts'].pop('directory', None)
 
     return run_fio_tests(TEST_LIST, test_env, args)
 
