@@ -129,7 +129,8 @@ class VerifyFailureTest(FioJobCmdTest):
             "--name=mangle",
             "--rw=randwrite",
             "--randrepeat=0",
-            f"--io_size={self.fio_opts['bs']}",
+            "--bs=1",
+            "--number_ios=1",
         ] + fio_args_base + VerifyFailureTest.add_verify_opts(self.fio_opts, ['filesize'])
 
         failure = ["--name=failure"] + verify
