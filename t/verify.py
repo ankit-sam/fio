@@ -53,6 +53,7 @@ VERIFY_OPT_LIST = [
     'verify_offset',
     'verify_async',
     'verify_async_cpus',
+    'verify_pattern',
 ]
 
 class VerifyTest(FioJobCmdTest):
@@ -75,9 +76,6 @@ class VerifyTest(FioJobCmdTest):
                 option = f"--{opt}={self.fio_opts[opt]}"
                 fio_args.append(option)
 
-        if self.fio_opts['verify'] == 'pattern':
-            fio_args.append('--verify_pattern="abcd"-120xdeadface')
-
         super().setup(fio_args)
 
 
@@ -97,9 +95,6 @@ class VerifyFailureTest(FioJobCmdTest):
             if opt in opt_list:
                 option = f"--{opt}={opt_list[opt]}"
                 fio_opts.append(option)
-
-        if 'verify' in opt_list and opt_list['verify'] == 'pattern':
-            fio_opts.append('--verify_pattern="abcd"-120xdeadface')
 
         return fio_opts
 
@@ -434,6 +429,11 @@ def verify_test_csum(test_env, args, csum):
         test['force_skip'] = False
         test['fio_opts']['verify'] = csum
 
+        if csum == 'pattern':
+            test['fio_opts']['verify_pattern'] = '"abcd"-120xdeadface'
+        else:
+            test['fio_opts'].pop('verify_pattern', None)
+
         # These tests produce verification failures but not when verify=null,
         # so adjust the success criterion.
         if csum == 'null':
@@ -454,6 +454,11 @@ def verify_test(test_env, args, ddir, csum):
 
         test['fio_opts']['rw'] = ddir
         test['fio_opts']['verify'] = csum
+
+        if csum == 'pattern':
+            test['fio_opts']['verify_pattern'] = '"abcd"-120xdeadface'
+        else:
+            test['fio_opts'].pop('verify_pattern', None)
 
         # For 100% read data directions we need a file that was written with
         # verify enabled. Use a previous test case for this by telling fio to
